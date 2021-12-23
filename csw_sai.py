@@ -1,4 +1,5 @@
 import os
+import copy
 import openpyxl
 from pathlib import Path
 from itertools import combinations
@@ -14,7 +15,7 @@ from simpleai.search import (
 HEAD_COUNSELORS = {'Brodi','Ceci','Ignacio','Jocelyn','John','Lily','Max','Micky','Noor'}
 COUNSELORS = {'Alicja','Brent','Daniel','Dom','Gabriel','Ildar','Juliana','Murray','Nelson','Simone','Sparta','Sydy'}
 INTERNS = {'Audrey','Ben','Jack','Jordan','Nathan','Sophie','Van'}
-ARCHERY_CERT = {'Ignacio','Jocelyn','Dom','Gabriel','Sophie','Jack','Brent','Daniel'}
+ARCHERY_CERT = {'Ignacio','Jocelyn','Dom','Gabriel','Simone','Sophie','Jack','Brent','Daniel'}
 LIFEGUARD_CERT = {'Brodi','Ceci','Dom','Ildar','Sparta','Nathan','Van','Ben'}
 # CELLS_TO_IGNORE = {14,17,60,77,80,153}
 CELLS_TO_IGNORE = {12,15,58,75,78,151} # Original -2
@@ -26,7 +27,7 @@ def spreadsheet_tasks():
     preference_sheet = preference_workbook_obj.active
 
     #Get tomorrow's schedule
-    schedule_sheet_file = Path(os.path.dirname(os.path.abspath(__file__)),'data','Schedule_1P.xlsx')
+    schedule_sheet_file = Path(os.path.dirname(os.path.abspath(__file__)),'data','Schedule.xlsx')
     schedule_workbook_obj = openpyxl.load_workbook(schedule_sheet_file)
     schedule_sheet = schedule_workbook_obj.active    
 
@@ -45,13 +46,34 @@ def spreadsheet_tasks():
     activities.append('Free Period')
 
     # Get the list of activities from tomorrow's schedule
-    schedule_activities = []
-    for row_index, row in enumerate(schedule_sheet.iter_rows(max_row=schedule_sheet.max_row, max_col=schedule_sheet.max_column)):
-        for cell in row:
-            if cell.value != None:
-                schedule_activities.append(cell.value)
-                # schedule_activities.append([row_index + 1,cell.value])
-    schedule_activities.append('Free Period')
+
+    def get_activity_periods(period, first_row, last_row):
+        for row_index, row in enumerate(schedule_sheet.iter_rows(min_row=first_row, max_row=last_row, max_col=schedule_sheet.max_column)):
+            for cell_index, cell in enumerate(row):
+                if cell.value != None:
+                    if row_index % 2 == 0:      # If row is even, it lists the activities
+                        period.append([cell.value])
+                    else:
+                        period[cell_index].append(cell.value)
+        # print(period)
+        return period
+
+    period_1 = []
+    period_2 = []
+    period_3 = []
+    period_4 = []
+    period_5 = []
+
+    get_activity_periods(period_1,1,2)
+    get_activity_periods(period_2,3,4)
+    get_activity_periods(period_3,5,6)
+    get_activity_periods(period_4,7,8)
+    get_activity_periods(period_5,9,10)
+
+    schedule_activities = [period_1, period_2, period_3, period_4, period_5]
+    print(schedule_activities)
+
+    # schedule_activities.append('Free Period')
 
     # Get preferences and creates a dictionary
     preferences = {}
@@ -80,26 +102,58 @@ staff, activities, preferences, schedule_activities = spreadsheet_tasks()
 
 problem_variables = staff
 domains = {}
+schedule_activities_without_archery = copy.deepcopy(schedule_activities)
+schedule_activities_without_waterfront = copy.deepcopy(schedule_activities)
+schedule_activities_without_archery_and_waterfront = copy.deepcopy(schedule_activities)
+if 'Archery' in schedule_activities:
+    schedule_activities_without_archery.remove('Archery')
+    schedule_activities_without_archery_and_waterfront.remove('Archery')
+if 'Kayaking' in schedule_activities:
+    schedule_activities_without_waterfront.remove('Kayaking')
+    schedule_activities_without_archery_and_waterfront.remove('Kayaking')
+if 'Swimming' in schedule_activities:
+    schedule_activities_without_waterfront.remove('Swimming')
+    schedule_activities_without_archery_and_waterfront.remove('Swimming')
+
+# print(schedule_activities)
+# print(schedule_activities_without_archery)
+# print(schedule_activities_without_waterfront)
+# print(schedule_activities_without_archery_and_waterfront)
+
 for variable in problem_variables:
-    if variable in HEAD_COUNSELORS:
-        domains[variable] = ['Free Period']
-    else:
+    if variable in ARCHERY_CERT and variable in LIFEGUARD_CERT: # If staff member is BOTH an archery instructor AND a lifeguard
         domains[variable] = schedule_activities
+        # print(variable,schedule_activities)
+    else:
+        if variable in ARCHERY_CERT:
+            domains[variable] = schedule_activities_without_waterfront
+            # print(variable,schedule_activities_without_waterfront)
+        elif variable in LIFEGUARD_CERT:
+            domains[variable] = schedule_activities_without_archery
+            # print(variable,schedule_activities_without_archery)
+        else:
+            domains[variable] = schedule_activities_without_archery_and_waterfront
+            # print(variable,schedule_activities_without_archery_and_waterfront)
 
 # CONSTRAINTS
 
 constraints = []
 
-def lifeguards_certs_on_waterfront(variables, values):
-    pass
-
-def archery_certs_on_archery(variables, values):
+def staff_camper_ratio(variables, values):
+    # 3:1 to 5:1 ratio
     pass
 
 def not_just_interns(variables, values):
+    # An activity can't be staffed with only interns. It has to have at least one counselor assigned to it.
     pass
 
 def take_preferences_into_account(variables, values):
     pass
 
 #print(preference_sheet["D2"].value)
+
+problem = CspProblem(problem_variables, domains, constraints)
+solution = backtrack(problem, variable_heuristic=HIGHEST_DEGREE_VARIABLE, value_heuristic=LEAST_CONSTRAINING_VALUE)
+
+#print("Solution:")
+#print(solution)
